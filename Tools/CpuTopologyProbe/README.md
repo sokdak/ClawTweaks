@@ -4,6 +4,16 @@ This Windows-only diagnostic tool collects the evidence needed to distinguish P,
 
 ## Run
 
+Ready-to-run packages include `Collect-Claw8EXValidation.ps1` next to the self-contained executable. The recommended first pass is read-only:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Collect-Claw8EXValidation.ps1
+```
+
+It creates a timestamped folder and ZIP on the desktop. Share the ZIP for analysis.
+
+Source-tree execution remains available when the .NET 8 SDK is installed:
+
 ```powershell
 dotnet run --project Tools/CpuTopologyProbe/CpuTopologyProbe.csproj -c Release -- --output cpu-topology.json
 ```
@@ -29,9 +39,9 @@ Atom-class cores are split only when Windows reports at least two distinct `Sche
 For final on-device verification, stop `XboxGamingBarHelper`, select Windows Balanced power mode, and run:
 
 ```powershell
-dotnet run --project Tools/CpuTopologyProbe/CpuTopologyProbe.csproj -c Release -- --test-frequency-domains --output claw8-ex-cpu-topology.json
+powershell -ExecutionPolicy Bypass -File .\Collect-Claw8EXValidation.ps1 -FrequencyDomainTest
 ```
 
-This optional test temporarily writes `1200 MHz` to each frequency-limit class, samples every logical processor's `MhzLimit`, then restores the original AC/DC value in a `finally` block before moving to the next class. It refuses to start while `XboxGamingBarHelper` is running. Do not interrupt or power off the machine during the test.
+The script first runs a read-only preflight and refuses to write when topology or register prerequisites fail. The optional test temporarily writes `1200 MHz` to each frequency-limit class, samples every logical processor's `MhzLimit`, then restores the original AC/DC value in a `finally` block before moving to the next class. It requires an explicit `EX-TEST` confirmation, refuses to start while `XboxGamingBarHelper` is running, checks Windows Balanced power mode, and verifies the post-test power-plan readback. Do not interrupt or power off the machine during the test.
 
 `IA32_HWP_CAPABILITIES` (`0x771`) remains `NotProbed`; reading an MSR requires a trusted kernel driver.
