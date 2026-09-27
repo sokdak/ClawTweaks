@@ -5,6 +5,7 @@ param(
     [uint32]$TestLimitMhz = 1200,
     [string]$ProbePath,
     [string]$OutputRoot,
+    [switch]$StopHelper,
     [switch]$Force
 )
 
@@ -15,6 +16,96 @@ function Get-IsAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = [Security.Principal.WindowsPrincipal]::new($identity)
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Restore-HelperInfrastructure {
+    param($State)
+
+    if ($null -eq $State) {
+        return
+    }
+
+    foreach ($taskState in @($State.Tasks)) {
+        if (-not $taskState.WasEnabled) {
+            continue
+        }
+
+        $task = Get-ScheduledTask -TaskName $taskState.TaskName -TaskPath $taskState.TaskPath -ErrorAction SilentlyContinue
+        if ($null -ne $task) {
+            Enable-ScheduledTask -InputObject $task | Out-Null
+        }
+    }
+
+    if ($null -ne $State.Service -and $State.Service.StartMode -ne 'Disabled') {
+        $startupType = $(if ($State.Service.StartMode -eq 'Auto') { 'Automatic' } else { 'Manual' })
+        Set-Service -Name $State.Service.Name -StartupType $startupType
+    }
+}
+
+function Suspend-HelperInfrastructure {
+    $state = [pscustomobject]@{
+        Tasks = [System.Collections.Generic.List[object]]::new()
+        Service = $null
+    }
+
+    try {
+        $taskLocations = @(
+            [pscustomobject]@{ TaskName = 'ClawTweaksHelper'; TaskPath = '\ClawTweaks\' },
+            [pscustomobject]@{ TaskName = 'GoTweaksHelper'; TaskPath = '\GoTweaks\' },
+            [pscustomobject]@{ TaskName = 'GoTweaksHelper'; TaskPath = '\' }
+        )
+        foreach ($location in $taskLocations) {
+            $task = Get-ScheduledTask -TaskName $location.TaskName -TaskPath $location.TaskPath -ErrorAction SilentlyContinue
+            if ($null -eq $task) {
+                continue
+            }
+
+            $wasEnabled = [string]$task.State -ne 'Disabled'
+            $state.Tasks.Add([pscustomobject]@{
+                TaskName = $location.TaskName
+                TaskPath = $location.TaskPath
+                WasEnabled = $wasEnabled
+            })
+            if ($wasEnabled) {
+                Disable-ScheduledTask -InputObject $task | Out-Null
+            }
+
+            Stop-ScheduledTask -InputObject $task -ErrorAction SilentlyContinue | Out-Null
+        }
+
+        $service = Get-CimInstance Win32_Service -Filter "Name='GoTweaksHelper'" -ErrorAction SilentlyContinue
+        if ($null -ne $service) {
+            $state.Service = [pscustomobject]@{
+                Name = $service.Name
+                StartMode = $service.StartMode
+            }
+            if ($service.StartMode -ne 'Disabled') {
+                Set-Service -Name $service.Name -StartupType Disabled
+            }
+            Stop-Service -Name $service.Name -Force -ErrorAction SilentlyContinue
+        }
+
+        $processNames = @('XboxGamingBar', 'GameBar', 'GameBarFTServer', 'XboxGamingBarHelper')
+        for ($attempt = 0; $attempt -lt 20; $attempt++) {
+            $running = @(Get-Process -Name $processNames -ErrorAction SilentlyContinue)
+            if ($running.Count -eq 0) {
+                break
+            }
+
+            $running | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Milliseconds 250
+        }
+
+        if (@(Get-Process -Name XboxGamingBarHelper -ErrorAction SilentlyContinue).Count -gt 0) {
+            throw '예약 작업과 Game Bar를 중지했지만 XboxGamingBarHelper가 계속 재시작됩니다.'
+        }
+
+        return $state
+    }
+    catch {
+        Restore-HelperInfrastructure -State $state
+        throw
+    }
 }
 
 function Resolve-ProbePath {
@@ -204,6 +295,7 @@ $archivePath = "$OutputRoot.zip"
 $summary = [System.Collections.Generic.List[string]]::new()
 $exitCode = 0
 $transcriptStarted = $false
+$helperInfrastructureState = $null
 
 try {
     Start-Transcript -Path $transcriptPath -Force | Out-Null
@@ -233,11 +325,6 @@ try {
             throw '주파수 도메인 시험은 관리자 PowerShell에서 실행해야 합니다.'
         }
 
-        $helper = @(Get-Process -Name XboxGamingBarHelper -ErrorAction SilentlyContinue)
-        if ($helper.Count -gt 0) {
-            throw 'XboxGamingBarHelper가 실행 중입니다. 트레이에서 종료한 뒤 다시 실행하세요. 스크립트가 자동 종료하지는 않습니다.'
-        }
-
         if ($before.powerPlan.effectiveOverlayReadStatus -eq 0 -and
             [Guid]$before.powerPlan.effectiveOverlay -ne [Guid]::Empty) {
             throw "Windows 전원 모드를 '균형 조정(Balanced)'으로 바꾼 뒤 다시 실행하세요. 현재 overlay=$($before.powerPlan.effectiveOverlay)"
@@ -247,9 +334,24 @@ try {
             Write-Host ''
             Write-Host "각 e100/e101/e102 레지스터를 잠시 ${TestLimitMhz}MHz로 설정하고 MhzLimit을 측정합니다." -ForegroundColor Yellow
             Write-Host '각 단계 직후 원래 AC/DC 값을 복원하지만, 시험 중 전원을 끄거나 프로세스를 강제 종료하면 안 됩니다.' -ForegroundColor Yellow
+            if ($StopHelper) {
+                Write-Host '실측 중 Helper 재시작을 막기 위해 Game Bar를 닫고 관련 예약 작업을 임시 비활성화합니다.' -ForegroundColor Yellow
+            }
             $confirmation = Read-Host '계속하려면 EX-TEST를 입력하세요'
             if ($confirmation -cne 'EX-TEST') {
                 throw '사용자가 주파수 도메인 시험을 취소했습니다.'
+            }
+        }
+
+        if ($StopHelper) {
+            Write-Host 'Helper와 자동 재시작 경로를 일시 중지합니다.'
+            $helperInfrastructureState = Suspend-HelperInfrastructure
+            $summary.Add('Helper suppression: Game Bar closed; helper tasks temporarily disabled.')
+        }
+        else {
+            $helper = @(Get-Process -Name XboxGamingBarHelper -ErrorAction SilentlyContinue)
+            if ($helper.Count -gt 0) {
+                throw 'XboxGamingBarHelper가 실행 중입니다. -StopHelper를 추가하거나 Widget과 Helper를 직접 종료하세요.'
             }
         }
 
@@ -303,6 +405,21 @@ catch {
     $exitCode = 1
 }
 finally {
+    if ($null -ne $helperInfrastructureState) {
+        try {
+            Restore-HelperInfrastructure -State $helperInfrastructureState
+            $summary.Add('Helper suppression restore: scheduled tasks and service startup restored; open the Widget to restart the Helper.')
+            Write-Host 'Helper 자동 시작 설정을 복구했습니다. 측정 후 Widget을 열면 Helper가 다시 시작됩니다.'
+        }
+        catch {
+            $summary.Insert(0, "HELPER_RESTORE_FAILED: $($_.Exception.Message)")
+            Write-Warning "Helper 자동 시작 설정 복구 실패: $($_.Exception.Message)"
+            if ($exitCode -eq 0) {
+                $exitCode = 5
+            }
+        }
+    }
+
     $summary | Set-Content -LiteralPath $summaryPath -Encoding utf8
     if ($transcriptStarted) {
         Stop-Transcript | Out-Null

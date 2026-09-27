@@ -42,6 +42,12 @@ For final on-device verification, stop `XboxGamingBarHelper`, select Windows Bal
 powershell -ExecutionPolicy Bypass -File .\Collect-Claw8EXValidation.ps1 -FrequencyDomainTest
 ```
 
-The script first runs a read-only preflight and refuses to write when E/LP-E topology is not distinguishable or no frequency register is present. A shared raw `EfficiencyClass` does not block the measurement: that is the exact Claw 8 EX case the active test must resolve. The optional test temporarily writes `1200 MHz` to each live frequency-limit class, samples every logical processor's `MhzLimit`, then restores the original AC/DC value in a `finally` block before moving to the next class. A pass requires one register that changes every LP-E processor without changing P/E processors, plus a different register that changes every E processor. It requires an explicit `EX-TEST` confirmation, refuses to start while `XboxGamingBarHelper` is running, checks Windows Balanced power mode, and verifies the post-test power-plan readback. Do not interrupt or power off the machine during the test.
+If the Widget keeps relaunching `XboxGamingBarHelper`, run the test with `-StopHelper`. This temporarily disables the ClawTweaks/GoTweaks helper scheduled tasks and service startup, closes Game Bar and the Widget, stops the Helper, and restores the startup configuration in the script's `finally` block. Open the Widget again after the test to restart the Helper.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Collect-Claw8EXValidation.ps1 -FrequencyDomainTest -StopHelper
+```
+
+The script first runs a read-only preflight and refuses to write when E/LP-E topology is not distinguishable or no frequency register is present. A shared raw `EfficiencyClass` does not block the measurement: that is the exact Claw 8 EX case the active test must resolve. The optional test temporarily writes `1200 MHz` to each live frequency-limit class, samples every logical processor's `MhzLimit`, then restores the original AC/DC value in a `finally` block before moving to the next class. A pass requires one register that changes every LP-E processor without changing P/E processors, plus a different register that changes every E processor. It requires an explicit `EX-TEST` confirmation, checks Windows Balanced power mode, and verifies the post-test power-plan readback. Without `-StopHelper` it refuses to start while `XboxGamingBarHelper` is running. Do not interrupt or power off the machine during the test.
 
 `IA32_HWP_CAPABILITIES` (`0x771`) remains `NotProbed`; reading an MSR requires a trusted kernel driver.
