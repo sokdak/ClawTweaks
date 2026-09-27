@@ -21,7 +21,7 @@ internal enum ClassificationConfidence
 
 internal sealed class CpuTopologyReport
 {
-    public int SchemaVersion { get; set; } = 2;
+    public int SchemaVersion { get; set; } = 3;
     public DateTimeOffset CollectedAtUtc { get; set; }
     public string MachineName { get; set; } = string.Empty;
     public string OperatingSystem { get; set; } = string.Empty;

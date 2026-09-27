@@ -155,6 +155,21 @@ function Add-ReportSummary {
             $mapping.frequencyLimitSettingPresent))
     }
 
+    if ($Report.PSObject.Properties.Name -contains 'frequencyDomainTest') {
+        $Lines.Add("Frequency-domain test: $($Report.frequencyDomainTest.status), limit=$($Report.frequencyDomainTest.requestedLimitMhz) MHz")
+        foreach ($step in @($Report.frequencyDomainTest.steps)) {
+            $changedGroups = @($step.observations | Where-Object { $_.changed } | Group-Object classification | ForEach-Object {
+                "$($_.Name)=$($_.Count)"
+            })
+            $changedText = $(if ($changedGroups.Count -eq 0) { 'none' } else { $changedGroups -join ', ' })
+            $Lines.Add(('  class {0}: write={1}, restore={2}, changed={3}' -f
+                $step.powerEfficiencyClass,
+                $step.writeSucceeded,
+                $step.restoreSucceeded,
+                $changedText))
+        }
+    }
+
     if (@($Report.issues).Count -gt 0) {
         $Lines.Add('Issues:')
         foreach ($issue in @($Report.issues)) {
@@ -270,8 +285,8 @@ try {
             Write-Host 'PASS: E와 LP-E 주파수 도메인이 분리되어 있고 원래 설정도 복원됐습니다.' -ForegroundColor Green
         }
         elseif ($independent -eq $false) {
-            $summary.Insert(0, 'VERDICT: FAIL_CROSS_DOMAIN_CHANGE')
-            Write-Warning 'FAIL: E/LP-E 사이의 교차 도메인 변경이 관측됐습니다.'
+            $summary.Insert(0, 'VERDICT: FAIL_NO_LP_E_ONLY_REGISTER')
+            Write-Warning 'FAIL: LP-E 전체만 변경하는 전용 레지스터가 관측되지 않았습니다.'
             $exitCode = 4
         }
         else {

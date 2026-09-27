@@ -77,6 +77,17 @@ internal static class CpuTopologyCollector
         return report;
     }
 
+    internal static void Reassess(CpuTopologyReport report)
+    {
+        report.SchemaVersion = 3;
+        if (report.HelperPowerClassMappings.Count == 0)
+        {
+            BuildHelperPowerClassMappings(report);
+        }
+
+        SetCapabilities(report);
+    }
+
     private static T TryRead<T>(
         CpuTopologyReport report,
         string source,
@@ -443,32 +454,23 @@ internal static class CpuTopologyCollector
             .Select(mapping => mapping.HelperPowerEfficiencyClass)
             .Intersect(lpeMappings.Select(mapping => mapping.HelperPowerEfficiencyClass))
             .ToArray();
-        if (sharedPowerClasses.Length > 0)
-        {
-            report.Capabilities.SupportsIndependentLpeFrequency = false;
-            report.Capabilities.IndependentLpeFrequencyEvidence =
-                $"E and LP-E cores share helper power efficiency class {string.Join("/", sharedPowerClasses)}.";
-            return;
-        }
-
-        PowerEfficiencyClassMapping[] missingSettings = eMappings
-            .Concat(lpeMappings)
-            .Where(mapping => !mapping.FrequencyLimitSettingPresent)
-            .Distinct()
+        ProcessorFrequencyLimitSetting[] liveSettings = report.PowerPlan.ProcessorFrequencyLimits
+            .Where(setting => setting.Present)
             .ToArray();
-        if (missingSettings.Length > 0)
+        if (liveSettings.Length == 0)
         {
             report.Capabilities.SupportsIndependentLpeFrequency = false;
             report.Capabilities.IndependentLpeFrequencyEvidence =
-                "The active power scheme does not expose every E/LP-E frequency-limit register required by the helper mapping.";
+                "The active power scheme does not expose any processor frequency-limit class registers.";
             return;
         }
 
         if (report.FrequencyDomainTest is null)
         {
             report.Capabilities.SupportsIndependentLpeFrequency = null;
-            report.Capabilities.IndependentLpeFrequencyEvidence =
-                "Read-only prerequisites pass. Run --test-frequency-domains with XboxGamingBarHelper stopped to prove that E and LP-E writes affect separate processor domains.";
+            report.Capabilities.IndependentLpeFrequencyEvidence = sharedPowerClasses.Length > 0
+                ? $"The current helper maps E and LP-E to shared power class {string.Join("/", sharedPowerClasses)}, but this does not prove that e101/e102 are unused. Run --test-frequency-domains to measure every live register."
+                : "Read-only prerequisites pass. Run --test-frequency-domains with XboxGamingBarHelper stopped to prove that E and LP-E writes affect separate processor domains.";
             return;
         }
 
@@ -480,63 +482,72 @@ internal static class CpuTopologyCollector
             return;
         }
 
-        bool? isolated = VerifyIsolatedDomainChanges(report, eMappings, lpeMappings);
+        bool? isolated = VerifyObservedLpeOverride(report, out string testEvidence);
         report.Capabilities.SupportsIndependentLpeFrequency = isolated;
-        report.Capabilities.IndependentLpeFrequencyEvidence = isolated switch
-        {
-            true => "The temporary frequency-domain test changed E and LP-E MhzLimit values through separate power-class registers and restored the original AC/DC values.",
-            false => "The temporary frequency-domain test observed cross-domain changes between E and LP-E processors.",
-            null => "The temporary frequency-domain test completed and restored the power plan, but MhzLimit changes were not observable on every target processor. Repeat in Windows Balanced power mode."
-        };
+        report.Capabilities.IndependentLpeFrequencyEvidence = testEvidence;
     }
 
-    private static bool? VerifyIsolatedDomainChanges(
-        CpuTopologyReport report,
-        IReadOnlyCollection<PowerEfficiencyClassMapping> eMappings,
-        IReadOnlyCollection<PowerEfficiencyClassMapping> lpeMappings)
+    private static bool? VerifyObservedLpeOverride(CpuTopologyReport report, out string evidence)
     {
-        bool? eResult = VerifyMappings(report, eMappings, CpuCoreKind.Efficiency);
-        bool? lpeResult = VerifyMappings(report, lpeMappings, CpuCoreKind.LowPowerEfficiency);
-        if (eResult == false || lpeResult == false)
+        FrequencyDomainTestStep[] completedSteps = report.FrequencyDomainTest!.Steps
+            .Where(step => step.WriteSucceeded && step.RestoreSucceeded && step.Observations.Count > 0)
+            .ToArray();
+        if (completedSteps.Length == 0)
         {
+            evidence = "No frequency-domain step completed with both measurements and a successful restore.";
+            return null;
+        }
+
+        int eProcessorCount = report.LogicalProcessors.Count(processor => processor.Classification == CpuCoreKind.Efficiency);
+        int lpeProcessorCount = report.LogicalProcessors.Count(processor => processor.Classification == CpuCoreKind.LowPowerEfficiency);
+        FrequencyDomainTestStep? lpeOnlyStep = completedSteps.FirstOrDefault(step =>
+        {
+            FrequencyDomainObservation[] changed = step.Observations.Where(item => item.Changed).ToArray();
+            return changed.Length == lpeProcessorCount
+                && changed.All(item => item.Classification == CpuCoreKind.LowPowerEfficiency);
+        });
+        FrequencyDomainTestStep? eStep = completedSteps.FirstOrDefault(step =>
+        {
+            FrequencyDomainObservation[] changed = step.Observations.Where(item => item.Changed).ToArray();
+            int changedECount = changed.Count(item => item.Classification == CpuCoreKind.Efficiency);
+            return changedECount == eProcessorCount
+                && changed.All(item => item.Classification is CpuCoreKind.Efficiency or CpuCoreKind.LowPowerEfficiency);
+        });
+
+        if (lpeOnlyStep is not null && eStep is not null
+            && lpeOnlyStep.PowerEfficiencyClass != eStep.PowerEfficiencyClass)
+        {
+            string eScope = eStep.Observations.Any(item => item.Changed && item.Classification == CpuCoreKind.LowPowerEfficiency)
+                ? "E+LP-E"
+                : "E-only";
+            evidence = $"Power class {lpeOnlyStep.PowerEfficiencyClass} changed all LP-E processors and no P/E processors; power class {eStep.PowerEfficiencyClass} changed {eScope}. A dedicated LP-E override register is present.";
+            return true;
+        }
+
+        bool sawEfficiencyChange = completedSteps.Any(step => step.Observations.Any(item =>
+            item.Changed && item.Classification is CpuCoreKind.Efficiency or CpuCoreKind.LowPowerEfficiency));
+        if (!sawEfficiencyChange)
+        {
+            evidence = "The test restored successfully, but no E or LP-E MhzLimit changes were observed. Repeat in Windows Balanced power mode.";
+            return null;
+        }
+
+        if (lpeOnlyStep is null)
+        {
+            string measured = string.Join("; ", completedSteps.Select(step =>
+            {
+                string kinds = string.Join("/", step.Observations
+                    .Where(item => item.Changed)
+                    .Select(item => item.Classification)
+                    .Distinct());
+                return $"class {step.PowerEfficiencyClass}={kinds}";
+            }));
+            evidence = "No register changed every LP-E processor without also changing P/E processors. Observed domains: " + measured + ".";
             return false;
         }
 
-        return eResult == true && lpeResult == true ? true : null;
-    }
-
-    private static bool? VerifyMappings(
-        CpuTopologyReport report,
-        IEnumerable<PowerEfficiencyClassMapping> mappings,
-        CpuCoreKind expectedKind)
-    {
-        bool observedExpectedChange = false;
-        foreach (PowerEfficiencyClassMapping mapping in mappings)
-        {
-            FrequencyDomainTestStep? step = report.FrequencyDomainTest!.Steps
-                .FirstOrDefault(item => item.PowerEfficiencyClass == mapping.HelperPowerEfficiencyClass);
-            if (step is null || !step.WriteSucceeded || !step.RestoreSucceeded)
-            {
-                return null;
-            }
-
-            if (step.Observations.Any(item => item.Changed && item.Classification != expectedKind))
-            {
-                return false;
-            }
-
-            FrequencyDomainObservation[] expectedObservations = step.Observations
-                .Where(item => item.Classification == expectedKind)
-                .ToArray();
-            if (expectedObservations.Length == 0 || expectedObservations.Any(item => !item.Changed))
-            {
-                return null;
-            }
-
-            observedExpectedChange = true;
-        }
-
-        return observedExpectedChange ? true : null;
+        evidence = $"Power class {lpeOnlyStep.PowerEfficiencyClass} is LP-E-only, but no different register changed every E processor. The E-side mapping remains inconclusive.";
+        return null;
     }
 
     private static void AddCrossValidationIssues(CpuTopologyReport report)

@@ -12,20 +12,34 @@ internal static class Program
             ProbeOptions options = ProbeOptions.Parse(args);
             if (options.ShowHelp)
             {
-                Console.WriteLine("Usage: CpuTopologyProbe [--output <path>] [--compact] [--test-frequency-domains] [--test-limit-mhz <mhz>]");
+                Console.WriteLine("Usage: CpuTopologyProbe [--output <path>] [--compact] [--test-frequency-domains] [--test-limit-mhz <mhz>] [--input <existing-report.json>]");
                 return 0;
             }
 
-            CpuTopologyReport report = CpuTopologyCollector.Collect(
-                options.TestFrequencyDomains,
-                options.TestLimitMhz);
             var serializerOptions = new JsonSerializerOptions
             {
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                PropertyNameCaseInsensitive = true,
                 WriteIndented = !options.Compact,
                 DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
                 Converters = { new JsonStringEnumConverter() }
             };
+            CpuTopologyReport report;
+            if (options.InputPath is null)
+            {
+                report = CpuTopologyCollector.Collect(
+                    options.TestFrequencyDomains,
+                    options.TestLimitMhz);
+            }
+            else
+            {
+                string inputPath = Path.GetFullPath(options.InputPath);
+                report = JsonSerializer.Deserialize<CpuTopologyReport>(
+                    File.ReadAllText(inputPath),
+                    serializerOptions) ?? throw new InvalidDataException($"Could not deserialize {inputPath}.");
+                CpuTopologyCollector.Reassess(report);
+            }
+
             string json = JsonSerializer.Serialize(report, serializerOptions);
 
             if (options.OutputPath is null)
@@ -57,6 +71,7 @@ internal static class Program
     private sealed class ProbeOptions
     {
         internal string? OutputPath { get; private set; }
+        internal string? InputPath { get; private set; }
         internal bool Compact { get; private set; }
         internal bool ShowHelp { get; private set; }
         internal bool TestFrequencyDomains { get; private set; }
@@ -81,6 +96,14 @@ internal static class Program
                     case "--compact":
                         options.Compact = true;
                         break;
+                    case "--input":
+                        if (++index >= args.Count)
+                        {
+                            throw new ArgumentException("--input requires a path.");
+                        }
+
+                        options.InputPath = args[index];
+                        break;
                     case "--test-frequency-domains":
                         options.TestFrequencyDomains = true;
                         break;
@@ -100,6 +123,11 @@ internal static class Program
                     default:
                         throw new ArgumentException($"Unknown argument: {args[index]}");
                 }
+            }
+
+            if (options.InputPath is not null && options.TestFrequencyDomains)
+            {
+                throw new ArgumentException("--input cannot be combined with --test-frequency-domains.");
             }
 
             return options;
