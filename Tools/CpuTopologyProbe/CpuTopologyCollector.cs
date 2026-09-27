@@ -79,7 +79,7 @@ internal static class CpuTopologyCollector
 
     internal static void Reassess(CpuTopologyReport report)
     {
-        report.SchemaVersion = 3;
+        report.SchemaVersion = 4;
         if (report.HelperPowerClassMappings.Count == 0)
         {
             BuildHelperPowerClassMappings(report);
@@ -520,7 +520,7 @@ internal static class CpuTopologyCollector
             string eScope = eStep.Observations.Any(item => item.Changed && item.Classification == CpuCoreKind.LowPowerEfficiency)
                 ? "E+LP-E"
                 : "E-only";
-            evidence = $"Power class {lpeOnlyStep.PowerEfficiencyClass} changed all LP-E processors and no P/E processors; power class {eStep.PowerEfficiencyClass} changed {eScope}. A dedicated LP-E override register is present.";
+            evidence = $"Power class {lpeOnlyStep.PowerEfficiencyClass} reduced every LP-E processor's pinned-load throughput or MhzLimit without affecting P/E processors; power class {eStep.PowerEfficiencyClass} affected {eScope}. A dedicated LP-E override register is present.";
             return true;
         }
 
@@ -528,7 +528,7 @@ internal static class CpuTopologyCollector
             item.Changed && item.Classification is CpuCoreKind.Efficiency or CpuCoreKind.LowPowerEfficiency));
         if (!sawEfficiencyChange)
         {
-            evidence = "The test restored successfully, but no E or LP-E MhzLimit changes were observed. Repeat in Windows Balanced power mode.";
+            evidence = "The test restored successfully, but no E or LP-E MhzLimit or pinned-load throughput changes were observed.";
             return null;
         }
 
@@ -542,11 +542,11 @@ internal static class CpuTopologyCollector
                     .Distinct());
                 return $"class {step.PowerEfficiencyClass}={kinds}";
             }));
-            evidence = "No register changed every LP-E processor without also changing P/E processors. Observed domains: " + measured + ".";
+            evidence = "No register measurably affected every LP-E processor without also affecting P/E processors. Observed domains: " + measured + ".";
             return false;
         }
 
-        evidence = $"Power class {lpeOnlyStep.PowerEfficiencyClass} is LP-E-only, but no different register changed every E processor. The E-side mapping remains inconclusive.";
+        evidence = $"Power class {lpeOnlyStep.PowerEfficiencyClass} appears LP-E-only, but no different register measurably affected every E processor. The E-side mapping remains inconclusive.";
         return null;
     }
 

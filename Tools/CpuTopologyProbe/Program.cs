@@ -75,7 +75,7 @@ internal static class Program
         internal bool Compact { get; private set; }
         internal bool ShowHelp { get; private set; }
         internal bool TestFrequencyDomains { get; private set; }
-        internal uint TestLimitMhz { get; private set; } = 1200;
+        internal uint TestLimitMhz { get; private set; } = 2000;
 
         internal static ProbeOptions Parse(IReadOnlyList<string> args)
         {

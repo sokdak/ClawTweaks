@@ -2,7 +2,7 @@
 param(
     [switch]$FrequencyDomainTest,
     [ValidateRange(400, 3000)]
-    [uint32]$TestLimitMhz = 1200,
+    [uint32]$TestLimitMhz = 2000,
     [string]$ProbePath,
     [string]$OutputRoot,
     [switch]$StopHelper,
@@ -247,17 +247,27 @@ function Add-ReportSummary {
     }
 
     if ($Report.PSObject.Properties.Name -contains 'frequencyDomainTest') {
-        $Lines.Add("Frequency-domain test: $($Report.frequencyDomainTest.status), limit=$($Report.frequencyDomainTest.requestedLimitMhz) MHz")
+        $Lines.Add("Frequency-domain test: $($Report.frequencyDomainTest.status), limit=$($Report.frequencyDomainTest.requestedLimitMhz) MHz, pinned load=$($Report.frequencyDomainTest.loadProbeDurationMilliseconds) ms")
         foreach ($step in @($Report.frequencyDomainTest.steps)) {
             $changedGroups = @($step.observations | Where-Object { $_.changed } | Group-Object classification | ForEach-Object {
                 "$($_.Name)=$($_.Count)"
             })
             $changedText = $(if ($changedGroups.Count -eq 0) { 'none' } else { $changedGroups -join ', ' })
-            $Lines.Add(('  class {0}: write={1}, restore={2}, changed={3}' -f
+            $throughputGroups = @($step.observations | Where-Object { $null -ne $_.throughputRatio } | Group-Object classification | ForEach-Object {
+                $averageRatio = ($_.Group | Measure-Object throughputRatio -Average).Average
+                '{0}={1:N1}%' -f $_.Name, ($averageRatio * 100)
+            })
+            $throughputText = $(if ($throughputGroups.Count -eq 0) { 'unavailable' } else { $throughputGroups -join ', ' })
+            $Lines.Add(('  class {0}: write={1}, appliedReadback={2} ({3}/{4}), restore={5}, restoreReadback={6}, changed={7}, throughput={8}' -f
                 $step.powerEfficiencyClass,
                 $step.writeSucceeded,
+                $step.appliedLimitReadbackSucceeded,
+                $step.appliedAcValueMhz,
+                $step.appliedDcValueMhz,
                 $step.restoreSucceeded,
-                $changedText))
+                $step.restoreReadbackSucceeded,
+                $changedText,
+                $throughputText))
         }
     }
 
@@ -332,7 +342,8 @@ try {
 
         if (-not $Force) {
             Write-Host ''
-            Write-Host "각 e100/e101/e102 레지스터를 잠시 ${TestLimitMhz}MHz로 설정하고 MhzLimit을 측정합니다." -ForegroundColor Yellow
+            Write-Host "각 e100/e101/e102 레지스터를 잠시 ${TestLimitMhz}MHz로 설정하고 코어별 고정 부하 처리량을 측정합니다." -ForegroundColor Yellow
+            Write-Host '각 레지스터마다 약 3초간 전체 CPU 부하가 발생합니다.' -ForegroundColor Yellow
             Write-Host '각 단계 직후 원래 AC/DC 값을 복원하지만, 시험 중 전원을 끄거나 프로세스를 강제 종료하면 안 됩니다.' -ForegroundColor Yellow
             if ($StopHelper) {
                 Write-Host '실측 중 Helper 재시작을 막기 위해 Game Bar를 닫고 관련 예약 작업을 임시 비활성화합니다.' -ForegroundColor Yellow
@@ -372,7 +383,9 @@ try {
         Add-ReportSummary -Lines $summary -Label 'READ-ONLY AFTER' -Report $after
 
         $allStepsRestored = @($test.frequencyDomainTest.steps).Count -gt 0 -and
-            @($test.frequencyDomainTest.steps | Where-Object { -not $_.restoreSucceeded }).Count -eq 0
+            @($test.frequencyDomainTest.steps | Where-Object {
+                -not $_.restoreSucceeded -or -not $_.restoreReadbackSucceeded
+            }).Count -eq 0
         $powerPlanRestored = Compare-PowerPlanSettings -Before $before.powerPlan -After $after.powerPlan
         $independent = $test.capabilities.supportsIndependentLpeFrequency
         $summary.Insert(0, "RESTORE: steps=$allStepsRestored, readback=$powerPlanRestored")
@@ -393,7 +406,7 @@ try {
         }
         else {
             $summary.Insert(0, 'VERDICT: INCONCLUSIVE')
-            Write-Warning '판정 불가: 모든 대상 코어에서 MhzLimit 변화가 관측되지 않았습니다.'
+            Write-Warning '판정 불가: 대상 코어에서 충분한 MhzLimit 또는 고정 부하 처리량 변화가 관측되지 않았습니다.'
             $exitCode = 2
         }
     }

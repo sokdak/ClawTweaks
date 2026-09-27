@@ -21,7 +21,7 @@ internal enum ClassificationConfidence
 
 internal sealed class CpuTopologyReport
 {
-    public int SchemaVersion { get; set; } = 3;
+    public int SchemaVersion { get; set; } = 4;
     public DateTimeOffset CollectedAtUtc { get; set; }
     public string MachineName { get; set; } = string.Empty;
     public string OperatingSystem { get; set; } = string.Empty;
@@ -101,6 +101,7 @@ internal sealed class FrequencyDomainTestReport
 {
     public string Status { get; set; } = "NotStarted";
     public uint RequestedLimitMhz { get; set; }
+    public int LoadProbeDurationMilliseconds { get; set; }
     public string? Error { get; set; }
     public List<FrequencyDomainTestStep> Steps { get; set; } = new();
 }
@@ -109,18 +110,37 @@ internal sealed class FrequencyDomainTestStep
 {
     public byte PowerEfficiencyClass { get; set; }
     public Guid SettingGuid { get; set; }
+    public uint RequestedLimitMhz { get; set; }
     public uint OriginalAcValueMhz { get; set; }
     public uint OriginalDcValueMhz { get; set; }
     public uint AcWriteStatus { get; set; }
     public uint DcWriteStatus { get; set; }
     public uint ApplySchemeStatus { get; set; }
+    public uint AppliedAcReadStatus { get; set; }
+    public uint AppliedDcReadStatus { get; set; }
+    public uint? AppliedAcValueMhz { get; set; }
+    public uint? AppliedDcValueMhz { get; set; }
     public uint RestoreAcStatus { get; set; }
     public uint RestoreDcStatus { get; set; }
     public uint RestoreSchemeStatus { get; set; }
+    public uint RestoredAcReadStatus { get; set; }
+    public uint RestoredDcReadStatus { get; set; }
+    public uint? RestoredAcValueMhz { get; set; }
+    public uint? RestoredDcValueMhz { get; set; }
     public string? Error { get; set; }
     public List<FrequencyDomainObservation> Observations { get; set; } = new();
     public bool WriteSucceeded => AcWriteStatus == 0 && DcWriteStatus == 0 && ApplySchemeStatus == 0;
     public bool RestoreSucceeded => RestoreAcStatus == 0 && RestoreDcStatus == 0 && RestoreSchemeStatus == 0;
+    public bool AppliedLimitReadbackSucceeded =>
+        AppliedAcReadStatus == 0
+        && AppliedDcReadStatus == 0
+        && AppliedAcValueMhz == RequestedLimitMhz
+        && AppliedDcValueMhz == RequestedLimitMhz;
+    public bool RestoreReadbackSucceeded =>
+        RestoredAcReadStatus == 0
+        && RestoredDcReadStatus == 0
+        && RestoredAcValueMhz == OriginalAcValueMhz
+        && RestoredDcValueMhz == OriginalDcValueMhz;
 }
 
 internal sealed class FrequencyDomainObservation
@@ -132,7 +152,17 @@ internal sealed class FrequencyDomainObservation
     public CpuCoreKind Classification { get; set; }
     public uint BeforeMhzLimit { get; set; }
     public uint DuringMhzLimit { get; set; }
-    public bool Changed => BeforeMhzLimit != DuringMhzLimit;
+    public ulong? BeforeOperationsPerSecond { get; set; }
+    public ulong? DuringOperationsPerSecond { get; set; }
+    public bool MhzLimitChanged => BeforeMhzLimit != DuringMhzLimit;
+    public double? ThroughputRatio => BeforeOperationsPerSecond > 0 && DuringOperationsPerSecond.HasValue
+        ? DuringOperationsPerSecond.Value / (double)BeforeOperationsPerSecond.Value
+        : null;
+    public double? ThroughputDropPercent => ThroughputRatio.HasValue
+        ? (1d - ThroughputRatio.Value) * 100d
+        : null;
+    public bool ThroughputChanged => ThroughputDropPercent >= 20d;
+    public bool Changed => MhzLimitChanged || ThroughputChanged;
 }
 
 internal sealed class LogicalProcessorReport
