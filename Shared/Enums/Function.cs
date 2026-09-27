@@ -729,5 +729,36 @@
         // setting and does not take instructions from us about it.
         // APPEND-ONLY: Function is serialised by ordinal — new members go at the END.
         Settings_OnScreenDisplayPosition, // int - 1=UpperLeft, 2=UpperMiddle, 3=UpperRight, 4=BottomLeft, 5=BottomMiddle, 6=BottomRight
+        Settings_NotifyControllerMount,
+        Settings_NotifyGameStart,
+        Settings_NotifyHotkey,
+        Settings_NotifyPowerSource,
+        Settings_FanLatchGuard,
+        ControllerLeftStickOuter,
+        ControllerRightStickOuter,
+        Settings_VrrKillSwitch,
+        DevicePl2MinOffset,
+        GameBarAutoNavOpenDelayMs,
+        GameBarAutoNavTapScalePercent,
+        CPUBoostMode,
+        CPUEPPClass1,
+        MaxCPUStateClass1,
+        MinCPUStateClass1,
+        CoreParkingMinCores,
+        CoreParkingMaxCores,
+        CPUMaxFrequencyMHz,
+        WindowsGameModeEnabled_Retired,
+        CPUMaxFrequencyClass1MHz,
+        DeviceMaxPCoreMHz,
+        DeviceMaxECoreMHz,
+        DeviceMinPL1,
+        ControllerReadyState,
+        TrayAppList,
+        Settings_QuickSettingsPanelEnabled_Retired,
+        Settings_RestoreControllerOnShutdown,
+        DriverUpdateResult,
+        WindowsUpdateResult,
+        Settings_QuickSettingsButtonOpensPanel,
+        MaxLPECoreFreqMHz
     }
 }

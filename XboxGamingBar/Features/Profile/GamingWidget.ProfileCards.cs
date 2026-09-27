@@ -898,6 +898,13 @@ namespace XboxGamingBar
                             AddTextBlock(acDcGrid, rowIndex, 2, GetFreqLabel(snapCard.MaxECoreFreqMHz), 10, "#FFFFFF", margin: new Thickness(0, 3, 0, 0), horizontalAlignment: HorizontalAlignment.Center);
                             rowIndex++;
                         }
+                        if (snapCard.MaxLPECoreFreqMHz > 0)
+                        {
+                            AddTextBlock(acDcGrid, rowIndex, 0, "LP E-Core Max", 10, "#AAAAAA", margin: new Thickness(0, 3, 8, 0));
+                            AddTextBlock(acDcGrid, rowIndex, 1, GetFreqLabel(snapCard.MaxLPECoreFreqMHz), 10, "#FFFFFF", margin: new Thickness(0, 3, 0, 0), horizontalAlignment: HorizontalAlignment.Center);
+                            AddTextBlock(acDcGrid, rowIndex, 2, GetFreqLabel(snapCard.MaxLPECoreFreqMHz), 10, "#FFFFFF", margin: new Thickness(0, 3, 0, 0), horizontalAlignment: HorizontalAlignment.Center);
+                            rowIndex++;
+                        }
                     }
 
                     // Intel Display (IGCL) — non-neutral channels only. No DC override exists for these,
@@ -1431,6 +1438,8 @@ namespace XboxGamingBar
                         pairs.Add(("P-Core Max", GetFreqLabel(perf.MaxPCoreFreqMHz)));
                     if (perf.MaxECoreFreqMHz > 0)
                         pairs.Add(("E-Core Max", GetFreqLabel(perf.MaxECoreFreqMHz)));
+                    if (perf.MaxLPECoreFreqMHz > 0)
+                        pairs.Add(("LP E-Core Max", GetFreqLabel(perf.MaxLPECoreFreqMHz)));
                 }
 
                 // Intel Display (IGCL) — only show non-neutral channels. Nullable in the helper's store:
@@ -1537,6 +1546,7 @@ namespace XboxGamingBar
                         pairs.Add(("Scheduling", schedName));
                     if (perf.MaxPCoreFreqMHz > 0) pairs.Add(("P-Core Max", GetFreqLabel(perf.MaxPCoreFreqMHz)));
                     if (perf.MaxECoreFreqMHz > 0) pairs.Add(("E-Core Max", GetFreqLabel(perf.MaxECoreFreqMHz)));
+                    if (perf.MaxLPECoreFreqMHz > 0) pairs.Add(("LP E-Core Max", GetFreqLabel(perf.MaxLPECoreFreqMHz)));
                 }
 
                 // Intel display channels — neutral values print nothing, same rule as the saved card.

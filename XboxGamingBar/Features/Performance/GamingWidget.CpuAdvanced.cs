@@ -23,6 +23,7 @@ namespace XboxGamingBar
         private CpuIntComboProperty schedulingPolicy;
         private CpuIntComboProperty maxPCoreFreq;
         private CpuIntComboProperty maxECoreFreq;
+        private CpuIntComboProperty maxLPECoreFreq;
 
         private void InitializeCpuAdvanced()
         {
@@ -91,6 +92,7 @@ namespace XboxGamingBar
 
             if (p.MaxPCoreFreqMHz > 0) parts.Add($"P{p.MaxPCoreFreqMHz}");
             if (p.MaxECoreFreqMHz > 0) parts.Add($"E{p.MaxECoreFreqMHz}");
+            if (p.MaxLPECoreFreqMHz > 0) parts.Add($"LP-E{p.MaxLPECoreFreqMHz}");
 
             return parts.Count == 0 ? null : string.Join(" · ", parts);
         }
@@ -216,7 +218,7 @@ namespace XboxGamingBar
 
         private bool MoveCpuComboFocus(ComboBox current, int dir)
         {
-            var order = new ComboBox[] { SchedulingPolicyComboBox, MaxPCoreFreqComboBox, MaxECoreFreqComboBox };
+            var order = new ComboBox[] { SchedulingPolicyComboBox, MaxPCoreFreqComboBox, MaxECoreFreqComboBox, MaxLPECoreFreqComboBox };
             int idx = Array.IndexOf(order, current);
             if (idx < 0) return false;
             int next = idx + dir;
@@ -359,7 +361,7 @@ namespace XboxGamingBar
         /// up-target from the Saved Profiles header when the CPU section is expanded.</summary>
         private Control LastEnabledCpuCombo()
         {
-            var order = new ComboBox[] { MaxECoreFreqComboBox, MaxPCoreFreqComboBox, SchedulingPolicyComboBox };
+            var order = new ComboBox[] { MaxLPECoreFreqComboBox, MaxECoreFreqComboBox, MaxPCoreFreqComboBox, SchedulingPolicyComboBox };
             foreach (var c in order)
                 if (c != null && c.IsEnabled && c.Visibility == Visibility.Visible) return c;
             return null;

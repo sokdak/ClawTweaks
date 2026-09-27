@@ -2022,6 +2022,7 @@ namespace XboxGamingBar
             schedulingPolicy = new CpuIntComboProperty(0, Shared.Enums.Function.ProcessorSchedulingPolicy, SchedulingPolicyComboBox, this);
             maxPCoreFreq = new CpuIntComboProperty(0, Shared.Enums.Function.MaxPCoreFreqMHz, MaxPCoreFreqComboBox, this);
             maxECoreFreq = new CpuIntComboProperty(0, Shared.Enums.Function.MaxECoreFreqMHz, MaxECoreFreqComboBox, this);
+            maxLPECoreFreq = new CpuIntComboProperty(-1, Shared.Enums.Function.MaxLPECoreFreqMHz, MaxLPECoreFreqComboBox, this);
             InitializeCpuAdvanced();
             // Intel Display (IGCL) — full Color Remaster set, saved in the Performance & Display profile
             intelSaturation = new WidgetSliderProperty(50, Shared.Enums.Function.IntelColorSaturation, DisplaySaturationSlider, this);
@@ -2550,6 +2551,7 @@ namespace XboxGamingBar
                 schedulingPolicy,
                 maxPCoreFreq,
                 maxECoreFreq,
+                maxLPECoreFreq,
                 intelSaturation,
                 intelHue,
                 intelContrast,
@@ -3162,7 +3164,6 @@ namespace XboxGamingBar
             {
                 if (cpuCoreConfig != null && !string.IsNullOrEmpty(cpuCoreConfig.Value))
                 {
-                    // Parse "pCores,eCores,isHybrid" format
                     var parts = cpuCoreConfig.Value.Split(',');
                     if (parts.Length >= 3 &&
                         int.TryParse(parts[0], out int pCores) &&
@@ -3171,9 +3172,21 @@ namespace XboxGamingBar
                     {
                         Logger.Info($"Received CPU core config from helper: {pCores}P + {eCores}E cores, hybrid={isHybrid}");
                         SetupCPUCoreConfigUI(pCores, eCores);
+                        int lpECoreCount = parts.Length >= 4 && int.TryParse(parts[3], out int parsedLPECoreCount) ? parsedLPECoreCount : 0;
+                        bool independentLPEFrequency = parts.Length >= 5 && bool.TryParse(parts[4], out bool parsedIndependentLPEFrequency) && parsedIndependentLPEFrequency;
+                        UpdateLPECoreFrequencyAvailability(lpECoreCount, independentLPEFrequency);
                     }
                 }
             });
+        }
+
+        private void UpdateLPECoreFrequencyAvailability(int lpECoreCount, bool independentFrequency)
+        {
+            if (MaxLPECoreFreqPanel != null)
+                MaxLPECoreFreqPanel.Visibility = lpECoreCount > 0 ? Visibility.Visible : Visibility.Collapsed;
+            if (MaxLPECoreFreqComboBox != null)
+                MaxLPECoreFreqComboBox.IsEnabled = independentFrequency;
+            Logger.Info($"LP E-Core frequency UI: cores={lpECoreCount}, independent={independentFrequency}");
         }
 
         private void QuickSettingsProperty_Changed(object sender, System.ComponentModel.PropertyChangedEventArgs e)

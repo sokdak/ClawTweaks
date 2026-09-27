@@ -205,6 +205,21 @@ namespace Shared.Data
             }
         }
 
+        [XmlElement("MaxLPECoreFreqMHz")]
+        private int maxLPECoreFreqMHz = -1;
+        public int MaxLPECoreFreqMHz
+        {
+            get { return maxLPECoreFreqMHz; }
+            set
+            {
+                if (maxLPECoreFreqMHz != value)
+                {
+                    maxLPECoreFreqMHz = value;
+                    Save();
+                }
+            }
+        }
+
         // ========== Intel Display (IGCL) — part of the performance profile ==========
         // Nullable: null = not configured (don't snap old profiles to grayscale on load).
         // Units (TnC/IGCL): sharpness 0..100 (0=off); saturation/contrast/brightness 0..100
@@ -1617,6 +1632,7 @@ namespace Shared.Data
             processorSchedulingPolicy = -1;
             maxPCoreFreqMHz = 0;
             maxECoreFreqMHz = 0;
+            maxLPECoreFreqMHz = -1;
             // Intel display: null = not configured.
             intelAdaptiveSharpness = null;
             intelColorSaturation = null;

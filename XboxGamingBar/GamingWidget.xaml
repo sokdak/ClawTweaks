@@ -3106,6 +3106,23 @@
                                             <ComboBoxItem Content="800 MHz" Tag="800"/>
                                         </ComboBox>
                                     </StackPanel>
+
+                                    <StackPanel x:Name="MaxLPECoreFreqPanel" Visibility="Collapsed">
+                                        <TextBlock Text="LP E-Core Max Frequency" Style="{StaticResource CardCaptionStyle}" Margin="0"/>
+                                        <ComboBox x:Name="MaxLPECoreFreqComboBox"
+                                                  Margin="0,4,0,0"
+                                                  HorizontalAlignment="Stretch"
+                                                  Style="{StaticResource ModernComboBoxStyle}"
+                                                  KeyDown="CpuAdvancedCombo_KeyDown">
+                                            <ComboBoxItem Content="Follow E-Core (default)" Tag="-1" IsSelected="True"/>
+                                            <ComboBoxItem Content="Unlimited" Tag="0"/>
+                                            <ComboBoxItem Content="2900 MHz" Tag="2900"/>
+                                            <ComboBoxItem Content="2400 MHz" Tag="2400"/>
+                                            <ComboBoxItem Content="1800 MHz" Tag="1800"/>
+                                            <ComboBoxItem Content="1200 MHz" Tag="1200"/>
+                                            <ComboBoxItem Content="800 MHz" Tag="800"/>
+                                        </ComboBox>
+                                    </StackPanel>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
